@@ -165,8 +165,9 @@ const fmtTime = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.get
 function fmtDisplayTime(target){
   const now = new Date();
   const base = fmtTime(target);
-  // (+Xd)
-  const dayDiff = Math.floor((target.setHours(0,0,0,0) - new Date(now.setHours(0,0,0,0))) / 86400000);
+  const startA = new Date(now); startA.setHours(0,0,0,0);
+  const startB = new Date(target); startB.setHours(0,0,0,0);
+  const dayDiff = Math.floor((startB - startA) / 86400000);
   return dayDiff===0 ? base : `${base} (+${dayDiff}d)`;
 }
 function keyOf(ep,map,channel){ return `${ep}||${map}||${channel}`; }
@@ -291,27 +292,47 @@ document.getElementById('addBtn').addEventListener('click', ()=>{
   save(); render();
 });
 
+/** 取得勾選/全部 rows（已按時間排序） */
+function getSelectedRows(){
+  return Object.values(state.entries)
+    .filter(r=>r.checked)
+    .sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+}
+function getAllRows(){
+  return Object.values(state.entries)
+    .sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+}
+
+/** 🔶 你要的複製格式：EP-等級數字-分流-時間（每筆一行） */
 document.getElementById('copyCheckedBtn').addEventListener('click', ()=>{
-  const rows = Object.values(state.entries).filter(r=>r.checked).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+  const rows = getSelectedRows();
   if (!rows.length){ alert('沒有勾選任何列'); return; }
-  const text = rows.map(r=>[r.ep,r.map,r.level,r.channel,fmtDisplayTime(new Date(r.targetISO))].join('\t')).join('\n');
+  const text = rows.map(r=>{
+    const lvl = String(r.level||"").replace(/^Lv\.?/i,'');  // Lv.75 -> 75
+    const t = fmtTime(new Date(r.targetISO));               // 只要 HH:MM:SS
+    return `${r.ep}-${lvl}-${r.channel}-${t}`;
+  }).join('\n');                                            // 每筆一行
   navigator.clipboard.writeText(text).then(()=>toast());
 });
 
 document.getElementById('copyAllBtn').addEventListener('click', ()=>{
-  const rows = Object.values(state.entries).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+  const rows = getAllRows();
   if (!rows.length){ alert('目前清單為空'); return; }
-  const text = rows.map(r=>[r.ep,r.map,r.level,r.channel,fmtDisplayTime(new Date(r.targetISO))].join('\t')).join('\n');
+  const text = rows.map(r=>{
+    const lvl = String(r.level||"").replace(/^Lv\.?/i,'');
+    const t = fmtTime(new Date(r.targetISO));
+    return `${r.ep}-${lvl}-${r.channel}-${t}`;
+  }).join('\n');
   navigator.clipboard.writeText(text).then(()=>toast('已複製全部！'));
 });
 
+/** 刪除 */
 document.getElementById('delCheckedBtn').addEventListener('click', ()=>{
   const keys = Object.entries(state.entries).filter(([,v])=>v.checked).map(([k])=>k);
   if (!keys.length){ alert('沒有勾選任何列'); return; }
   keys.forEach(k=>delete state.entries[k]);
   save(); render();
 });
-
 document.getElementById('delAllBtn').addEventListener('click', ()=>{
   if (!confirm('確定要清除全部嗎？')) return;
   state.entries = {};
