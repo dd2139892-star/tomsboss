@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>麥當勞單點專用v1（Web）</title>
+<style>
+  :root {
+    --bg:#0b0f14; --card:#111827; --muted:#6b7280; --text:#e5e7eb; --accent:#60a5fa; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --border:#1f2937;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial}
+  .container{max-width:1100px;margin:32px auto;padding:0 16px}
+  h1{font-size:22px;margin:0 0 16px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+  .toolbar .btn{background:#1f2937;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+  .toolbar .btn:hover{border-color:#334155}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .sound{display:flex;align-items:center;gap:8px;color:var(--muted)}
+  select,input[type="text"],input[type="number"]{background:#0b1220;border:1px solid #22324a;color:var(--text);padding:8px;border-radius:10px}
+  input[type="number"]{width:80px;text-align:center}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:10px;border-bottom:1px solid var(--border);text-align:center}
+  th{color:#cbd5e1;font-weight:600}
+  .timeSoon{color:var(--warn)}
+  .timeDue{color:var(--bad);font-weight:700}
+  .pill{display:inline-block;padding:4px 8px;border:1px solid #2a3a56;border-radius:999px;color:#93c5fd;background:#0b1220}
+  .muted{color:var(--muted)}
+  .footer{margin-top:8px;font-size:12px;color:#94a3b8}
+  .hidden{display:none!important}
+  /* 密碼遮罩 */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:50}
+  .modal{width:320px;background:#121826;border:1px solid #1f2a44;border-radius:14px;padding:18px}
+  .modal h3{margin:0 0 10px;font-size:18px}
+  .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  .modal button{background:#1f2937;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+  .modal button.primary{background:#2563eb;border-color:#2563eb}
+  .grid{display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:10px}
+  @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  .copy-toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111827;border:1px solid #334155;padding:8px 12px;border-radius:10px;color:#cbd5e1;opacity:0;transition:opacity .25s}
+  .copy-toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="pwOverlay" class="overlay">
+  <div class="modal">
+    <h3>密碼驗證</h3>
+    <p class="muted" style="margin:6px 0 10px">請輸入本週密碼才能進入。</p>
+    <input id="pwInput" type="password" placeholder="本週密碼" style="width:100%">
+    <div class="actions">
+      <button id="pwCancel">離開</button>
+      <button id="pwOk" class="primary">確定</button>
+    </div>
+    <div id="pwMsg" class="muted" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<div class="container">
+  <h1>麥當勞單點專用v1（Web）</h1>
+
+  <!-- 新增區 -->
+  <div class="card">
+    <div class="grid">
+      <div>
+        <div class="muted" style="margin-bottom:6px">章節 (EP)</div>
+        <select id="ep"></select>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px">地圖名稱</div>
+        <select id="map"></select>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px">等級</div>
+        <input id="level" type="text" readonly>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px">分流</div>
+        <select id="channel"></select>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px">倒數時間</div>
+        <div class="row" style="align-items:center">
+          <input id="hh" type="number" value="1" min="0" max="99" />
+          <span class="muted">時</span>
+          <input id="mm" type="number" value="0" min="0" max="59" />
+          <span class="muted">分</span>
+          <input id="ss" type="number" value="0" min="0" max="59" />
+          <span class="muted">秒</span>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:space-between">
+      <div class="toolbar">
+        <button class="btn" id="addBtn">新增 BOSS</button>
+        <button class="btn" id="copyCheckedBtn">複製勾選</button>
+        <button class="btn" id="copyAllBtn">複製全部</button>
+        <button class="btn" id="delCheckedBtn">清除勾選</button>
+        <button class="btn" id="delAllBtn">清除全部</button>
+      </div>
+      <div class="sound">
+        <label><input type="checkbox" id="soundToggle" checked> 啟用提示鈴聲</label>
+        <span>提前提示</span>
+        <select id="alertBefore">
+          <option value="0">0</option>
+          <option value="1">1</option>
+          <option value="3">3</option>
+          <option value="5">5</option>
+          <option value="10">10</option>
+        </select>
+        <span>分鐘</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 清單 -->
+  <div class="card" style="margin-top:12px">
+    <table id="list">
+      <thead>
+        <tr>
+          <th>✔</th>
+          <th>章節</th>
+          <th>地圖名稱</th>
+          <th>等級</th>
+          <th>分流</th>
+          <th>時間</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="footer">依時間（實際到點）排序；相同「章節+地圖+分流」新增第二次會覆蓋第一次；資料儲存在瀏覽器的 localStorage。</div>
+  </div>
+</div>
+
+<div id="toast" class="copy-toast">已複製到剪貼簿！</div>
+
+<script>
+/** ===== 常數 & 資料 ===== */
+const PASSWORD_URL = "https://script.google.com/macros/s/AKfycbyQB0VxmIukBcZRzFmRm4_xirXZIfMxNkY_h4LwAO4iiaUx3yw1JGjBZx0BO9mRvVb5/exec";
+
+const EP_MAP_LEVEL = {
+  "EP1": {"夏奧雷伊西邊森林":"Lv.1","夏奧雷伊東邊森林":"Lv.3","蓮帕拉沙池塘":"Lv.5","夏奧雷伊礦山村莊":"Lv.7","水晶礦山":"Lv.9"},
+  "EP2": {"斯拉屋塔斯峽谷":"Lv.10","凱利高原":"Lv.11","奈普里塔斯懸崖":"Lv.12","泰內花園":"Lv.13","泰內聖堂地下1層":"Lv.15","泰內聖堂上1層":"Lv.17","泰內聖堂上2層":"Lv.19"},
+  "EP3": {"庫魯森林":"Lv.20","克尼多斯森林":"Lv.21","達旦森林":"Lv.22","諾巴哈公會所":"Lv.24","諾巴哈別館":"Lv.26","諾巴哈本院":"Lv.28"},
+  "EP4": {"貝雅山谷":"Lv.30","比爾塔溪谷":"Lv.31","科博爾特森林":"Lv.32","賽提尼山溝":"Lv.34","培爾克神殿":"Lv.36","安森塔水源地":"Lv.38"},
+  "EP5": {"卡羅利斯泉水":"Lv.40","萊塔斯小溪":"Lv.42","德慕蘭佃農村":"Lv.44","德慕蘭莊園":"Lv.46","德慕蘭外城":"Lv.48"},
+  "EP6": {"達伊納養蜂地":"Lv.50","比爾那森林":"Lv.51","烏奇斯耕作地":"Lv.52","春光樹林":"Lv.53","關口路":"Lv.55","史爾特凱拉特林":"Lv.57","克巴伊拉斯森林":"Lv.59"},
+  "EP7": {"魯卡斯高原":"Lv.60","王之高原":"Lv.61","札卡里耶爾交叉路":"Lv.62","王陵1層":"Lv.64","王陵2層":"Lv.66","王陵3層":"Lv.68"},
+  "EP8": {"水路橋地區":"Lv.70","魔族收監所第1區":"Lv.71","魔族收監所第3區":"Lv.72","魔族收監所第4區":"Lv.73","魔族收監所第5區":"Lv.74"},
+  "EP9": {"女神的古院":"Lv.75","佩迪米安外城":"Lv.76","魔法師之塔1層":"Lv.77","魔法師之塔2層":"Lv.78","魔法師之塔3層":"Lv.79"},
+  "EP10":{"大教堂懺悔路":"Lv.80","大教堂正殿":"Lv.81","大教堂大迴廊":"Lv.82","大教堂至聖所":"Lv.83"},
+};
+const CHANNELS = Array.from({length:10},(_,i)=>String(i+1));
+
+/** ===== 狀態 ===== */
+const state = {
+  entries: {}, // key = `${ep}||${map}||${channel}` → {ep,map,level,channel,targetISO,checked,alertedBefore,alertedFinal}
+  soundEnabled: true,
+  alertBeforeMin: 0,
+};
+
+/** ===== 工具 ===== */
+const pad2 = n => String(n).padStart(2,"0");
+const fmtTime = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+function fmtDisplayTime(target){
+  const now = new Date();
+  const base = fmtTime(target);
+  // (+Xd)
+  const dayDiff = Math.floor((target.setHours(0,0,0,0) - new Date(now.setHours(0,0,0,0))) / 86400000);
+  return dayDiff===0 ? base : `${base} (+${dayDiff}d)`;
+}
+function keyOf(ep,map,channel){ return `${ep}||${map}||${channel}`; }
+function beep(){
+  if(!state.soundEnabled) return;
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type='sine'; osc.frequency.value=880;
+    osc.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.01);
+    osc.start();
+    setTimeout(()=>{osc.stop(); ctx.close();}, 200);
+  }catch(e){ /* ignore */ }
+}
+function toast(msg="已複製到剪貼簿！"){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1000);
+}
+
+/** ===== 本地存取 ===== */
+const LS_KEY = "tomsboss_web_entries";
+const LS_PREF = "tomsboss_web_pref";
+function save(){
+  localStorage.setItem(LS_KEY, JSON.stringify(state.entries));
+  localStorage.setItem(LS_PREF, JSON.stringify({soundEnabled:state.soundEnabled, alertBeforeMin:state.alertBeforeMin}));
+}
+function load(){
+  try{
+    const data = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    if (data && typeof data === "object") state.entries = data;
+  }catch{}
+  try{
+    const pref = JSON.parse(localStorage.getItem(LS_PREF) || "{}");
+    if (typeof pref?.soundEnabled === "boolean") state.soundEnabled = pref.soundEnabled;
+    if (typeof pref?.alertBeforeMin === "number") state.alertBeforeMin = pref.alertBeforeMin;
+  }catch{}
+}
+
+/** ===== UI 綁定 ===== */
+const epSel = document.getElementById('ep');
+const mapSel = document.getElementById('map');
+const levelInp = document.getElementById('level');
+const chSel = document.getElementById('channel');
+const hhInp = document.getElementById('hh');
+const mmInp = document.getElementById('mm');
+const ssInp = document.getElementById('ss');
+const tbody = document.getElementById('tbody');
+
+const soundToggle = document.getElementById('soundToggle');
+const alertBefore = document.getElementById('alertBefore');
+
+function initSelectors(){
+  // EP
+  epSel.innerHTML = Object.keys(EP_MAP_LEVEL).map(ep=>`<option value="${ep}">${ep}</option>`).join("");
+  // Channels
+  chSel.innerHTML = CHANNELS.map(c=>`<option value="${c}">${c}</option>`).join("");
+  // Alert before
+  alertBefore.value = String(state.alertBeforeMin||0);
+  soundToggle.checked = !!state.soundEnabled;
+
+  refreshMaps();
+}
+function refreshMaps(){
+  const ep = epSel.value;
+  const maps = Object.keys(EP_MAP_LEVEL[ep]||{});
+  mapSel.innerHTML = maps.map(m=>`<option value="${m}">${m}</option>`).join("");
+  refreshLevel();
+}
+function refreshLevel(){
+  const ep=epSel.value, map=mapSel.value;
+  levelInp.value = (EP_MAP_LEVEL[ep]||{})[map] || "";
+}
+
+/** ===== 渲染表格 ===== */
+function render(){
+  // 排序（target 時間早到晚）
+  const rows = Object.values(state.entries).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+  tbody.innerHTML = rows.map(row=>{
+    const target = new Date(row.targetISO);
+    const now = new Date();
+    let cls = "";
+    if (now >= target) cls = "timeDue";
+    else if ((target - now) <= 10*60*1000) cls = "timeSoon"; // 10 分鐘內即將到
+    return `<tr data-key="${keyOf(row.ep,row.map,row.channel)}">
+      <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
+      <td>${row.ep}</td>
+      <td>${row.map}</td>
+      <td><span class="pill">${row.level}</span></td>
+      <td>${row.channel}</td>
+      <td class="${cls}">${fmtDisplayTime(new Date(row.targetISO))}</td>
+    </tr>`;
+  }).join("");
+}
+
+/** ===== 行為：新增、複製、刪除 ===== */
+function clamp(v, lo, hi){ v = parseInt(v,10); if(isNaN(v)) v=0; return Math.max(lo, Math.min(hi, v)); }
+
+document.getElementById('addBtn').addEventListener('click', ()=>{
+  const ep = epSel.value;
+  const map = mapSel.value;
+  const level = levelInp.value || "";
+  const ch = chSel.value;
+  const h = clamp(hhInp.value, 0, 99);
+  const m = clamp(mmInp.value, 0, 59);
+  const s = clamp(ssInp.value, 0, 59);
+  if (!ep || !map || !ch){ alert('請完整選擇 EP / 地圖 / 分流'); return; }
+  if (h===0 && m===0 && s===0){ alert('倒數時間不可為 0'); return; }
+
+  const target = new Date(Date.now() + (h*3600 + m*60 + s)*1000);
+  const key = keyOf(ep,map,ch);
+  const prev = state.entries[key] || {};
+  state.entries[key] = {
+    ep, map, level, channel: ch,
+    targetISO: target.toISOString(),
+    checked: !!prev.checked,
+    alertedBefore: false,
+    alertedFinal: false,
+  };
+  save(); render();
+});
+
+document.getElementById('copyCheckedBtn').addEventListener('click', ()=>{
+  const rows = Object.values(state.entries).filter(r=>r.checked).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+  if (!rows.length){ alert('沒有勾選任何列'); return; }
+  const text = rows.map(r=>[r.ep,r.map,r.level,r.channel,fmtDisplayTime(new Date(r.targetISO))].join('\t')).join('\n');
+  navigator.clipboard.writeText(text).then(()=>toast());
+});
+
+document.getElementById('copyAllBtn').addEventListener('click', ()=>{
+  const rows = Object.values(state.entries).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
+  if (!rows.length){ alert('目前清單為空'); return; }
+  const text = rows.map(r=>[r.ep,r.map,r.level,r.channel,fmtDisplayTime(new Date(r.targetISO))].join('\t')).join('\n');
+  navigator.clipboard.writeText(text).then(()=>toast('已複製全部！'));
+});
+
+document.getElementById('delCheckedBtn').addEventListener('click', ()=>{
+  const keys = Object.entries(state.entries).filter(([,v])=>v.checked).map(([k])=>k);
+  if (!keys.length){ alert('沒有勾選任何列'); return; }
+  keys.forEach(k=>delete state.entries[k]);
+  save(); render();
+});
+
+document.getElementById('delAllBtn').addEventListener('click', ()=>{
+  if (!confirm('確定要清除全部嗎？')) return;
+  state.entries = {};
+  save(); render();
+});
+
+/** 勾選點擊（事件代理） */
+tbody.addEventListener('change', (e)=>{
+  if (!e.target.classList.contains('chk')) return;
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const key = tr.dataset.key;
+  if (state.entries[key]){
+    state.entries[key].checked = e.target.checked;
+    save();
+  }
+});
+
+/** ===== 提示音 & 提前提醒 ===== */
+soundToggle.addEventListener('change', ()=>{
+  state.soundEnabled = soundToggle.checked; save();
+});
+alertBefore.addEventListener('change', ()=>{
+  state.alertBeforeMin = parseInt(alertBefore.value,10)||0; save();
+});
+
+/** ===== 計時輪詢：每秒刷新 + 發送提醒 ===== */
+setInterval(()=>{
+  // 提醒
+  const now = new Date();
+  const beforeMs = (state.alertBeforeMin||0)*60*1000;
+  Object.values(state.entries).forEach(r=>{
+    const t = new Date(r.targetISO).getTime();
+    if (!r.alertedBefore && beforeMs>0 && now.getTime() >= (t - beforeMs) && now.getTime() < t){
+      beep(); r.alertedBefore = true; save();
+    }
+    if (!r.alertedFinal && now.getTime() >= t){
+      beep(); r.alertedFinal = true; save();
+    }
+  });
+  // 畫面時間字串刷新
+  render();
+}, 1000);
+
+/** ===== 密碼驗證 ===== */
+async function fetchPassword(){
+  const r = await fetch(PASSWORD_URL, {cache:'no-cache'});
+  if (!r.ok) throw new Error('密碼 API 失敗');
+  return (await r.text()).trim();
+}
+async function gate(){
+  const overlay = document.getElementById('pwOverlay');
+  const msg = document.getElementById('pwMsg');
+  const input = document.getElementById('pwInput');
+  const okBtn = document.getElementById('pwOk');
+  const cancelBtn = document.getElementById('pwCancel');
+
+  let correct = null;
+  msg.textContent = "正在取得密碼…";
+  try{
+    correct = await fetchPassword();
+    msg.textContent = "";
+  }catch(e){
+    msg.textContent = "無法取得密碼，請檢查網路或稍後再試。";
+  }
+
+  return new Promise((resolve)=>{
+    function tryCheck(){
+      if (!correct){ alert('尚未取得密碼，請稍後重整頁面。'); return; }
+      if ((input.value||"").trim() === correct){
+        overlay.classList.add('hidden');
+        resolve(true);
+      }else{
+        msg.textContent = "密碼錯誤！";
+      }
+    }
+    okBtn.onclick = tryCheck;
+    input.onkeypress = e=>{ if(e.key==='Enter') tryCheck(); };
+    cancelBtn.onclick = ()=>{ window.close(); resolve(false); };
+  });
+}
+
+/** ===== 啟動 ===== */
+(async function init(){
+  // 載入儲存
+  load();
+  // 綁定下拉
+  initSelectors();
+  epSel.addEventListener('change', refreshMaps);
+  mapSel.addEventListener('change', refreshLevel);
+
+  // 初次渲染
+  render();
+
+  // 密碼門禁
+  await gate();
+})();
+</script>
+</body>
+</html>
