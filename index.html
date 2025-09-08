@@ -154,7 +154,9 @@
 <div id="toast" class="copy-toast">已複製到剪貼簿！</div>
 
 <script>
-/* 🔹 時分秒加減控制按鈕 */
+const PASSWORD_URL = "https://script.google.com/macros/s/AKfycbyQB0VxmIukBcZRzFmRm4_xirXZIfMxNkY_h4LwAO4iiaUx3yw1JGjBZx0BO9mRvVb5/exec";
+
+/* 時分秒加減控制 */
 document.addEventListener('click', e=>{
   if (!e.target.matches('button[data-target]')) return;
   const id = e.target.getAttribute('data-target');
@@ -164,12 +166,71 @@ document.addEventListener('click', e=>{
 
   let v = parseInt(input.value,10) || 0;
   v += delta;
-
   if (id === 'hh') v = Math.max(0, Math.min(99, v));
   if (id === 'mm' || id === 'ss') v = Math.max(0, Math.min(59, v));
-
   input.value = v;
 });
+
+/* 改良版密碼驗證 */
+async function fetchPassword(timeoutMs = 8000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+  try{
+    const r = await fetch(PASSWORD_URL, { cache:'no-cache', signal: ctrl.signal });
+    if (!r.ok) throw new Error(`密碼 API 回應碼 ${r.status}`);
+    const txt = (await r.text() || "").trim();
+    if (!txt) throw new Error("密碼內容為空");
+    return txt;
+  } finally {
+    clearTimeout(t);
+  }
+}
+async function gate(){
+  const overlay  = document.getElementById('pwOverlay');
+  const msg      = document.getElementById('pwMsg');
+  const input    = document.getElementById('pwInput');
+  const okBtn    = document.getElementById('pwOk');
+  const cancelBtn= document.getElementById('pwCancel');
+
+  msg.textContent = "正在取得密碼…";
+  input.value = "";
+  okBtn.disabled = true;
+
+  let correct = null;
+  try{
+    correct = await fetchPassword();
+    msg.textContent = "";
+    okBtn.disabled = false;
+    input.focus();
+  }catch(e){
+    console.error("[gate] 密碼取得失敗：", e);
+    msg.textContent = "無法取得密碼，請確認網路或稍後重整。";
+    okBtn.disabled = false;
+  }
+
+  input.onkeypress = (e)=>{ if(e.key === 'Enter') tryCheck(); };
+  okBtn.onclick = tryCheck;
+  cancelBtn.onclick = ()=>overlay.classList.add('hidden');
+
+  function tryCheck(){
+    if (!correct){
+      msg.textContent = "尚未取得密碼，請重整頁面或稍後再試。";
+      return;
+    }
+    if ((input.value||"").trim() === correct){
+      overlay.classList.add('hidden');
+      msg.textContent = "";
+    }else{
+      msg.textContent = "密碼錯誤！";
+      input.select();
+    }
+  }
+}
+
+/* 啟動 */
+(async function init(){
+  await gate();
+})();
 </script>
 </body>
 </html>
