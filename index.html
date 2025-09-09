@@ -28,9 +28,9 @@
   .footer{margin-top:8px;font-size:12px;color:#94a3b8}
   .hidden{display:none!important}
 
-  /* 密碼遮罩 */
+  /* 通用遮罩 */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:50}
-  .modal{width:320px;background:#121826;border:1px solid #1f2a44;border-radius:14px;padding:18px}
+  .modal{width:360px;max-width:92vw;background:#121826;border:1px solid #1f2a44;border-radius:14px;padding:18px}
   .modal h3{margin:0 0 10px;font-size:18px}
   .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
   .modal button{background:#1f2937;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
@@ -49,8 +49,8 @@
   .time-col{display:flex;flex-direction:column;gap:4px}
   .btn.small.square{width:38px;padding:6px 0;font-size:12px;text-align:center}
 
-  /* ===== 新增：地圖顏色標示 ===== */
-  tr.rowMap { border-left:6px solid transparent; }          /* 色條會用 inline style 設定 */
+  /* 地圖顏色標示 */
+  tr.rowMap { border-left:6px solid transparent; }
   .mapBadge { display:inline-flex; align-items:center; gap:8px; justify-content:center }
   .mapDot { width:10px; height:10px; border-radius:50%; display:inline-block }
 </style>
@@ -67,6 +67,27 @@
       <button id="pwOk" class="primary">確定</button>
     </div>
     <div id="pwMsg" class="muted" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<!-- 分流後移對話框 -->
+<div id="shiftOverlay" class="overlay hidden">
+  <div class="modal">
+    <h3>分流後移</h3>
+    <div class="muted" style="margin:6px 0 4px">章節 (EP)</div>
+    <select id="shiftEp" style="width:100%"></select>
+
+    <div class="muted" style="margin:10px 0 4px">地圖名稱</div>
+    <select id="shiftMap" style="width:100%"></select>
+
+    <div class="muted" style="margin:10px 0 4px">插入的分流號（從這個分流開始往後 +1）</div>
+    <input id="shiftAt" type="number" min="1" step="1" value="1" style="width:100%">
+
+    <div class="actions">
+      <button id="shiftCancel">取消</button>
+      <button id="shiftOk" class="primary">確定後移</button>
+    </div>
+    <div id="shiftMsg" class="muted" style="margin-top:8px;font-size:12px"></div>
   </div>
 </div>
 
@@ -145,6 +166,8 @@
         <button class="btn" id="copyAllBtn">複製全部</button>
         <button class="btn" id="delCheckedBtn">清除勾選</button>
         <button class="btn" id="delAllBtn">清除全部</button>
+        <!-- 新增：分流後移按鈕 -->
+        <button class="btn" id="shiftBtn">分流後移</button>
       </div>
       <div class="sound">
         <label><input type="checkbox" id="soundToggle" checked> 啟用提示鈴聲</label>
@@ -237,18 +260,16 @@ function toast(msg="已複製到剪貼簿！"){
   setTimeout(()=>t.classList.remove('show'),1000);
 }
 
-/* ===== 新增：把地圖名稱轉成穩定的顏色 ===== */
+/* 地圖色彩 */
 function strHash(s){
   let h=0;
   for(let i=0;i<s.length;i++){ h=((h<<5)-h + s.charCodeAt(i))|0; }
   return Math.abs(h);
 }
 function mapColor(mapName){
-  // Hue 0~360 取決於文字；S/L 固定，確保對比
   const h = strHash(mapName) % 360;
   const s = 65, l = 45;
   const bg = `hsl(${h}deg, ${s}%, ${l}%)`;
-  // 依亮度簡單決定前景色
   const fg = l >= 50 ? '#111' : '#fff';
   return { bg, fg };
 }
@@ -284,12 +305,24 @@ const tbody = document.getElementById('tbody');
 const soundToggle = document.getElementById('soundToggle');
 const alertBefore = document.getElementById('alertBefore');
 
+/* 分流後移對話框元素 */
+const shiftOverlay = document.getElementById('shiftOverlay');
+const shiftEp = document.getElementById('shiftEp');
+const shiftMap = document.getElementById('shiftMap');
+const shiftAt = document.getElementById('shiftAt');
+const shiftMsg = document.getElementById('shiftMsg');
+const shiftBtn = document.getElementById('shiftBtn');
+
 function initSelectors(){
   epSel.innerHTML = Object.keys(EP_MAP_LEVEL).map(ep=>`<option value="${ep}">${ep}</option>`).join("");
   chSel.innerHTML = CHANNELS.map(c=>`<option value="${c}">${c}</option>`).join("");
   alertBefore.value = String(state.alertBeforeMin||0);
   soundToggle.checked = !!state.soundEnabled;
   refreshMaps();
+
+  // 分流後移視窗的 EP/Map 初始
+  shiftEp.innerHTML = epSel.innerHTML;
+  refreshShiftMaps();
 }
 function refreshMaps(){
   const ep = epSel.value;
@@ -300,6 +333,11 @@ function refreshMaps(){
 function refreshLevel(){
   const ep=epSel.value, map=mapSel.value;
   levelInp.value = (EP_MAP_LEVEL[ep]||{})[map] || "";
+}
+function refreshShiftMaps(){
+  const ep = shiftEp.value;
+  const maps = Object.keys(EP_MAP_LEVEL[ep]||{});
+  shiftMap.innerHTML = maps.map(m=>`<option value="${m}">${m}</option>`).join("");
 }
 
 /** ===== 表格渲染（含地圖顏色） ===== */
@@ -312,8 +350,8 @@ function render(){
     if (now >= target) cls = "timeDue";
     else if ((target - now) <= 10*60*1000) cls = "timeSoon";
 
-    const { bg, fg } = mapColor(row.map);
-    const rowStyle = `border-left-color:${bg}`; // 左側色條
+    const { bg } = mapColor(row.map);
+    const rowStyle = `border-left-color:${bg}`;
 
     return `<tr class="rowMap" data-key="${keyOf(row.ep,row.map,row.channel)}" style="${rowStyle}">
       <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
@@ -407,6 +445,62 @@ tbody.addEventListener('change', (e)=>{
     state.entries[key].checked = e.target.checked;
     save();
   }
+});
+
+/** ===== 分流後移：對話框與邏輯 ===== */
+function openShiftDialog(){
+  // 將目前新增區的 EP/Map 帶入，方便操作
+  shiftEp.value = epSel.value;
+  refreshShiftMaps();
+  shiftMap.value = mapSel.value;
+  shiftAt.value = '1';
+  shiftMsg.textContent = '';
+  shiftOverlay.classList.remove('hidden');
+}
+function closeShiftDialog(){ shiftOverlay.classList.add('hidden'); }
+
+shiftBtn.addEventListener('click', openShiftDialog);
+document.getElementById('shiftCancel').addEventListener('click', closeShiftDialog);
+shiftEp.addEventListener('change', refreshShiftMaps);
+
+document.getElementById('shiftOk').addEventListener('click', ()=>{
+  const ep = shiftEp.value;
+  const map = shiftMap.value;
+  let at = parseInt(shiftAt.value,10);
+  if (!ep || !map || !at || at<1){ shiftMsg.textContent = '請輸入正確的分流號（>=1）'; return; }
+
+  // 找出符合 EP+Map 且 channel >= at 的項目
+  const affected = Object.entries(state.entries)
+    .filter(([,v]) => v.ep===ep && v.map===map && parseInt(v.channel,10) >= at)
+    .map(([k,v]) => ({key:k, data:v, ch:parseInt(v.channel,10)}));
+
+  if (!affected.length){
+    shiftMsg.textContent = '沒有可後移的分流（可能目前沒有此 EP/地圖的分流，或分流號都小於插入點）。';
+    return;
+  }
+
+  // 為避免覆蓋：照分流號由大到小搬移
+  affected.sort((a,b)=>b.ch - a.ch).forEach(item=>{
+    const oldKey = item.key;
+    const v = item.data;
+    const newChannel = String(item.ch + 1);
+    const newKey = keyOf(v.ep, v.map, newChannel);
+
+    // 若 newKey 已存在，先備份舊資料（幾乎不會撞，因為我們是由大到小依序搬）
+    if (state.entries[newKey]){
+      // 理論上不會被覆蓋到，但保險起見：
+      console.warn('[shift] 目標分流已存在，將覆蓋：', newKey);
+    }
+    // 寫入新 key
+    state.entries[newKey] = { ...v, channel: newChannel };
+    // 刪除舊 key
+    delete state.entries[oldKey];
+  });
+
+  save();
+  render();
+  closeShiftDialog();
+  toast(`已將 ${ep} / ${map} 從分流 ${at} 起全部後移 +1`);
 });
 
 /** ===== 提示音 & 提前提醒 ===== */
