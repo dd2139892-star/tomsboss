@@ -48,6 +48,11 @@
   .time-unit{display:flex;align-items:center;gap:8px}
   .time-col{display:flex;flex-direction:column;gap:4px}
   .btn.small.square{width:38px;padding:6px 0;font-size:12px;text-align:center}
+
+  /* ===== 新增：地圖顏色標示 ===== */
+  tr.rowMap { border-left:6px solid transparent; }          /* 色條會用 inline style 設定 */
+  .mapBadge { display:inline-flex; align-items:center; gap:8px; justify-content:center }
+  .mapDot { width:10px; height:10px; border-radius:50%; display:inline-block }
 </style>
 </head>
 <body>
@@ -232,6 +237,22 @@ function toast(msg="已複製到剪貼簿！"){
   setTimeout(()=>t.classList.remove('show'),1000);
 }
 
+/* ===== 新增：把地圖名稱轉成穩定的顏色 ===== */
+function strHash(s){
+  let h=0;
+  for(let i=0;i<s.length;i++){ h=((h<<5)-h + s.charCodeAt(i))|0; }
+  return Math.abs(h);
+}
+function mapColor(mapName){
+  // Hue 0~360 取決於文字；S/L 固定，確保對比
+  const h = strHash(mapName) % 360;
+  const s = 65, l = 45;
+  const bg = `hsl(${h}deg, ${s}%, ${l}%)`;
+  // 依亮度簡單決定前景色
+  const fg = l >= 50 ? '#111' : '#fff';
+  return { bg, fg };
+}
+
 /** ===== 本地存取 ===== */
 const LS_KEY = "tomsboss_web_entries";
 const LS_PREF = "tomsboss_web_pref";
@@ -281,7 +302,7 @@ function refreshLevel(){
   levelInp.value = (EP_MAP_LEVEL[ep]||{})[map] || "";
 }
 
-/** ===== 表格渲染 ===== */
+/** ===== 表格渲染（含地圖顏色） ===== */
 function render(){
   const rows = Object.values(state.entries).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
   tbody.innerHTML = rows.map(row=>{
@@ -290,10 +311,19 @@ function render(){
     let cls = "";
     if (now >= target) cls = "timeDue";
     else if ((target - now) <= 10*60*1000) cls = "timeSoon";
-    return `<tr data-key="${keyOf(row.ep,row.map,row.channel)}">
+
+    const { bg, fg } = mapColor(row.map);
+    const rowStyle = `border-left-color:${bg}`; // 左側色條
+
+    return `<tr class="rowMap" data-key="${keyOf(row.ep,row.map,row.channel)}" style="${rowStyle}">
       <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
       <td>${row.ep}</td>
-      <td>${row.map}</td>
+      <td>
+        <span class="mapBadge">
+          <span class="mapDot" style="background:${bg}"></span>
+          ${row.map}
+        </span>
+      </td>
       <td><span class="pill">${row.level}</span></td>
       <td>${row.channel}</td>
       <td class="${cls}">${fmtDisplayTime(new Date(row.targetISO))}</td>
@@ -458,7 +488,7 @@ async function gate(){
   }
 
   function tryCheckOrRetry(){
-    if (!correct){           // 還沒抓到密碼 → 當重試鍵
+    if (!correct){
       loadPassword();
       return;
     }
@@ -482,18 +512,17 @@ async function gate(){
   input.onkeypress = (e)=>{ if(e.key === 'Enter') tryCheckOrRetry(); };
   cancelBtn.onclick = ()=>overlay.classList.add('hidden');
 
-  // 進入頁面先抓一次
   await loadPassword();
 }
 
 /** ===== 啟動 ===== */
 (async function init(){
-  load();                 // 讀 localStorage
-  initSelectors();        // 灌 EP/地圖/分流
+  load();
+  initSelectors();
   epSel.addEventListener('change', refreshMaps);
   mapSel.addEventListener('change', refreshLevel);
-  render();               // 初次渲染
-  await gate();           // 密碼驗證
+  render();
+  await gate();
 })();
 </script>
 </body>
