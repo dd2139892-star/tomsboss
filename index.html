@@ -12,11 +12,11 @@
   h1{font-size:22px;margin:0 0 16px}
   .row{display:flex;gap:12px;flex-wrap:wrap}
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
-  .toolbar .btn{background:#1f2937;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
-  .toolbar .btn:hover{border-color:#334155}
+  .toolbar .btn, .btn{background:#1f2937;border:1px solid var(--border);color:#e5e7eb;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .toolbar .btn:hover, .btn:hover{border-color:#334155}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap}
   .sound{display:flex;align-items:center;gap:8px;color:var(--muted)}
-  select,input[type="text"],input[type="number"]{background:#0b1220;border:1px solid #22324a;color:var(--text);padding:8px;border-radius:10px}
+  select,input[type="text"],input[type="number"],input[type="password"]{background:#0b1220;border:1px solid #22324a;color:var(--text);padding:8px;border-radius:10px}
   input[type="number"]{width:80px;text-align:center}
   table{width:100%;border-collapse:collapse;margin-top:10px}
   th,td{padding:10px;border-bottom:1px solid var(--border);text-align:center}
@@ -33,7 +33,7 @@
   .modal{width:360px;max-width:92vw;background:#121826;border:1px solid #1f2a44;border-radius:14px;padding:18px}
   .modal h3{margin:0 0 10px;font-size:18px}
   .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
-  .modal button{background:#1f2937;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+  .modal button{background:#1f2937;border:1px solid var(--border);color:#e5e7eb;padding:8px 12px;border-radius:10px;cursor:pointer}
   .modal button.primary{background:#2563eb;border-color:#2563eb}
 
   .grid{display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:10px}
@@ -43,16 +43,19 @@
   .copy-toast.show{opacity:1}
 
   .btn.small{padding:2px 6px;font-size:12px}
-  /* 時間控制：左右直向按鈕 */
   .time-ctrl{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
   .time-unit{display:flex;align-items:center;gap:8px}
   .time-col{display:flex;flex-direction:column;gap:4px}
   .btn.small.square{width:38px;padding:6px 0;font-size:12px;text-align:center}
 
-  /* 地圖顏色標示（左側色條；整列底色在 inline style 設定） */
+  /* 地圖顏色標示（左側色條；整列底色用 inline style） */
   tr.rowMap { border-left:6px solid transparent; }
   .mapBadge { display:inline-flex; align-items:center; gap:8px; justify-content:center }
   .mapDot { width:10px; height:10px; border-radius:50%; display:inline-block }
+
+  /* 金鑰輸入/輸出框 */
+  .key-in.green{border:1px solid #3b8d3b;background:rgba(16,61,16,.25)}
+  .key-in.blue{border:1px solid #2563eb;background:rgba(13,35,70,.28)}
 </style>
 </head>
 <body>
@@ -116,7 +119,6 @@
       <div>
         <div class="muted" style="margin-bottom:6px">倒數時間</div>
         <div class="time-ctrl">
-          <!-- 時 -->
           <div class="time-unit">
             <div class="time-col">
               <button class="btn small square" data-target="hh" data-delta="-1">-1</button>
@@ -129,7 +131,6 @@
             </div>
             <span class="muted">時</span>
           </div>
-          <!-- 分 -->
           <div class="time-unit">
             <div class="time-col">
               <button class="btn small square" data-target="mm" data-delta="-1">-1</button>
@@ -142,7 +143,6 @@
             </div>
             <span class="muted">分</span>
           </div>
-          <!-- 秒 -->
           <div class="time-unit">
             <div class="time-col">
               <button class="btn small square" data-target="ss" data-delta="-1">-1</button>
@@ -156,6 +156,16 @@
             <span class="muted">秒</span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 金鑰：左按鈕產生紀錄 → 綠框輸出；右按鈕讀取紀錄 ← 藍框輸入 -->
+    <div class="row" style="margin-top:12px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button id="genKeyBtn" class="btn">產生紀錄</button>
+        <input id="exportOut" class="key-in green" type="text" placeholder="生成的金鑰會顯示在這裡（自動複製）" style="width:420px" readonly>
+        <button id="readKeyBtn" class="btn">讀取紀錄</button>
+        <input id="importIn" class="key-in blue" type="text" placeholder="把金鑰貼在這裡，再按『讀取紀錄』" style="width:420px">
       </div>
     </div>
 
@@ -269,16 +279,12 @@ function mapColor(mapName){
   const PALETTE = [12,42,72,102,132,162,192,222,252,282,312,342]; // 12 色盤
   const idx = Math.abs(strHash(mapName)) % PALETTE.length;
   const h = PALETTE[idx];
-
-  const alt = (Math.abs(strHash(mapName) >> 4) % 2) === 0; // 交錯亮度
-  const sStrong = 72;
-  const lStrong = alt ? 42 : 35;
-  const sSoft   = 70;
-  const lSoft   = alt ? 30 : 26;
-  const ALPHA   = 0.22; // 底色透明度（可調 0.18~0.30）
-
-  const strong = `hsl(${h}deg, ${sStrong}%, ${lStrong}%)`;      // 左側色條與小圓點
-  const soft   = `hsla(${h}, ${sSoft}%, ${lSoft}%, ${ALPHA})`;  // 整列底色（不改文字色）
+  const alt = (Math.abs(strHash(mapName) >> 4) % 2) === 0;
+  const sStrong = 72, lStrong = alt ? 42 : 35;
+  const sSoft = 70,  lSoft = alt ? 30 : 26;
+  const ALPHA = 0.22;
+  const strong = `hsl(${h}deg, ${sStrong}%, ${lStrong}%)`;
+  const soft   = `hsla(${h}, ${sSoft}%, ${lSoft}%, ${ALPHA})`;
   return { bg: strong, soft };
 }
 
@@ -321,6 +327,13 @@ const shiftAt = document.getElementById('shiftAt');
 const shiftMsg = document.getElementById('shiftMsg');
 const shiftBtn = document.getElementById('shiftBtn');
 
+/* 金鑰 UI */
+const genKeyBtn = document.getElementById('genKeyBtn');
+const readKeyBtn = document.getElementById('readKeyBtn');
+const exportOut = document.getElementById('exportOut');
+const importIn = document.getElementById('importIn');
+
+/** ===== 初始化選單 ===== */
 function initSelectors(){
   epSel.innerHTML = Object.keys(EP_MAP_LEVEL).map(ep=>`<option value="${ep}">${ep}</option>`).join("");
   chSel.innerHTML = CHANNELS.map(c=>`<option value="${c}">${c}</option>`).join("");
@@ -328,7 +341,6 @@ function initSelectors(){
   soundToggle.checked = !!state.soundEnabled;
   refreshMaps();
 
-  // 分流後移視窗的 EP/Map 初始
   shiftEp.innerHTML = epSel.innerHTML;
   refreshShiftMaps();
 }
@@ -364,12 +376,7 @@ function render(){
     return `<tr class="rowMap" data-key="${keyOf(row.ep,row.map,row.channel)}" style="${rowStyle}">
       <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
       <td>${row.ep}</td>
-      <td>
-        <span class="mapBadge">
-          <span class="mapDot" style="background:${bg}"></span>
-          ${row.map}
-        </span>
-      </td>
+      <td><span class="mapBadge"><span class="mapDot" style="background:${bg}"></span>${row.map}</span></td>
       <td><span class="pill">${row.level}</span></td>
       <td>${row.channel}</td>
       <td class="${cls}">${fmtDisplayTime(new Date(row.targetISO))}</td>
@@ -377,7 +384,7 @@ function render(){
   }).join("");
 }
 
-/** ===== 行為：新增/複製/刪除 ===== */
+/** ===== 新增/複製/刪除 ===== */
 function clamp(v, lo, hi){ v = parseInt(v,10); if(isNaN(v)) v=0; return Math.max(lo, Math.min(hi, v)); }
 
 document.getElementById('addBtn').addEventListener('click', ()=>{
@@ -455,7 +462,7 @@ tbody.addEventListener('change', (e)=>{
   }
 });
 
-/** ===== 分流後移：對話框與邏輯 ===== */
+/** ===== 分流後移 ===== */
 function openShiftDialog(){
   shiftEp.value = epSel.value;
   refreshShiftMaps();
@@ -476,33 +483,25 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
   let at = parseInt(shiftAt.value,10);
   if (!ep || !map || !at || at<1){ shiftMsg.textContent = '請輸入正確的分流號（>=1）'; return; }
 
-  // 找出符合 EP+Map 且 channel >= at 的項目
   const affected = Object.entries(state.entries)
     .filter(([,v]) => v.ep===ep && v.map===map && parseInt(v.channel,10) >= at)
     .map(([k,v]) => ({key:k, data:v, ch:parseInt(v.channel,10)}));
 
   if (!affected.length){
-    shiftMsg.textContent = '沒有可後移的分流（可能目前沒有此 EP/地圖的分流，或分流號都小於插入點）。';
+    shiftMsg.textContent = '沒有可後移的分流。';
     return;
   }
 
-  // 由大到小搬移避免覆蓋
   affected.sort((a,b)=>b.ch - a.ch).forEach(item=>{
     const oldKey = item.key;
     const v = item.data;
     const newChannel = String(item.ch + 1);
     const newKey = keyOf(v.ep, v.map, newChannel);
-
-    if (state.entries[newKey]){
-      console.warn('[shift] 目標分流已存在，將覆蓋：', newKey);
-    }
     state.entries[newKey] = { ...v, channel: newChannel };
     delete state.entries[oldKey];
   });
 
-  save();
-  render();
-  closeShiftDialog();
+  save(); render(); closeShiftDialog();
   toast(`已將 ${ep} / ${map} 從分流 ${at} 起全部後移 +1`);
 });
 
@@ -510,7 +509,6 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
 soundToggle.addEventListener('change', ()=>{ state.soundEnabled = soundToggle.checked; save(); });
 alertBefore.addEventListener('change', ()=>{ state.alertBeforeMin = parseInt(alertBefore.value,10)||0; save(); });
 
-/** ===== 計時輪詢 ===== */
 setInterval(()=>{
   const now = new Date();
   const beforeMs = (state.alertBeforeMin||0)*60*1000;
@@ -526,7 +524,7 @@ setInterval(()=>{
   render();
 }, 1000);
 
-/** ===== 時分秒加減控制按鈕（直向版共用） ===== */
+/** ===== 時分秒控制 ===== */
 document.addEventListener('click', e=>{
   if (!e.target.matches('button[data-target]')) return;
   const id = e.target.getAttribute('data-target');
@@ -540,7 +538,7 @@ document.addEventListener('click', e=>{
   input.value = v;
 });
 
-/** ===== 密碼驗證（可重試＋逾時＋狀態顯示） ===== */
+/** ===== 密碼驗證 ===== */
 async function fetchPassword(timeoutMs = 8000){
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
@@ -548,11 +546,8 @@ async function fetchPassword(timeoutMs = 8000){
     const r = await fetch(PASSWORD_URL, { cache:'no-cache', signal: ctrl.signal });
     if (!r.ok) throw new Error(`API 狀態碼 ${r.status}`);
     const txt = (await r.text() || "").trim();
-    if (!txt) throw new Error("API 內容為空");
     return txt;
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }
 async function gate(){
   const overlay   = document.getElementById('pwOverlay');
@@ -576,41 +571,85 @@ async function gate(){
       msg.textContent = "";
       okBtn.disabled = false;
       input.focus();
-      console.log("[gate] 密碼取得成功");
     }catch(e){
-      console.error("[gate] 密碼取得失敗：", e);
-      msg.textContent = "無法取得密碼（網路/CORS/部署設定）。按『確定』可再試一次，或稍後重整。";
+      msg.textContent = "無法取得密碼。按『確定』再試一次，或稍後重整。";
       okBtn.disabled = false;
     }
   }
 
   function tryCheckOrRetry(){
-    if (!correct){
-      loadPassword();
-      return;
-    }
+    if (!correct){ loadPassword(); return; }
     const val = (input.value || "").trim();
-    if (!val){
-      msg.textContent = "請先輸入密碼";
-      input.focus();
-      return;
-    }
-    if (val === correct){
-      overlay.classList.add('hidden');
-      msg.textContent = "";
-      console.log("[gate] 密碼比對通過");
-    }else{
-      msg.textContent = "密碼錯誤！";
-      input.select();
-    }
+    if (!val){ msg.textContent = "請先輸入密碼"; input.focus(); return; }
+    if (val === correct){ overlay.classList.add('hidden'); msg.textContent = ""; }
+    else { msg.textContent = "密碼錯誤！"; input.select(); }
   }
 
   okBtn.onclick = tryCheckOrRetry;
   input.onkeypress = (e)=>{ if(e.key === 'Enter') tryCheckOrRetry(); };
   cancelBtn.onclick = ()=>overlay.classList.add('hidden');
-
   await loadPassword();
 }
+
+/** ===== 金鑰：匯出/匯入 ===== */
+/* CRC32（校驗金鑰完整性） */
+const CRC32_TABLE = (()=>{let c,t=[];for(let n=0;n<256;n++){c=n;for(let k=0;k<8;k++){c=((c&1)?(0xEDB88320^(c>>>1)):(c>>>1));}t[n]=c>>>0;}return t;})();
+function crc32(str){
+  let crc=0^(-1);
+  for(let i=0;i<str.length;i++){ crc=(crc>>>8) ^ CRC32_TABLE[(crc^str.charCodeAt(i)) & 0xFF]; }
+  return ((crc^(-1))>>>0).toString(16).padStart(8,'0');
+}
+function b64encode(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64decode(b64){ return decodeURIComponent(escape(atob(b64))); }
+
+/* 產生紀錄 → 輸出金鑰（左按鈕） */
+genKeyBtn.addEventListener('click', ()=>{
+  const payload = {
+    v: 1,
+    ts: Date.now(),
+    entries: state.entries,
+    pref: { soundEnabled: state.soundEnabled, alertBeforeMin: state.alertBeforeMin }
+  };
+  const json = JSON.stringify(payload);
+  const b64 = b64encode(json);
+  const sig = crc32(b64);
+  const token = `TB1:${sig}:${b64}`;
+  exportOut.value = token;
+  navigator.clipboard.writeText(token).then(()=>toast('已產生並複製金鑰！'));
+});
+
+/* 讀取紀錄 ← 匯入金鑰（右按鈕）：
+   有相同地圖＋相同分流就覆蓋，沒有則新增 */
+readKeyBtn.addEventListener('click', ()=>{
+  const token = (importIn.value || '').trim();
+  if (!token){ alert('請先把金鑰貼到藍色輸入框'); return; }
+  try{
+    const [prefix, sig, b64] = token.split(':');
+    if (prefix!=='TB1' || !sig || !b64){ throw new Error('格式不正確'); }
+    const check = crc32(b64);
+    if (check !== sig.toLowerCase()){ throw new Error('校驗失敗，金鑰可能被截斷或修改'); }
+    const obj = JSON.parse(b64decode(b64));
+    if (obj.v !== 1 || !obj.entries){ throw new Error('版本不支援或內容缺失'); }
+
+    let added=0, updated=0;
+    Object.entries(obj.entries).forEach(([k,v])=>{
+      if (state.entries[k]) updated++; else added++;
+      state.entries[k] = v;
+    });
+
+    if (obj.pref){
+      if (typeof obj.pref.soundEnabled === 'boolean') state.soundEnabled = obj.pref.soundEnabled;
+      if (typeof obj.pref.alertBeforeMin === 'number') state.alertBeforeMin = obj.pref.alertBeforeMin;
+      soundToggle.checked = state.soundEnabled;
+      alertBefore.value = String(state.alertBeforeMin||0);
+    }
+
+    save(); render();
+    toast(`匯入完成：新增 ${added}、覆蓋 ${updated}`);
+  }catch(err){
+    alert(`金鑰讀取失敗：${err.message||err}`);
+  }
+});
 
 /** ===== 啟動 ===== */
 (async function init(){
