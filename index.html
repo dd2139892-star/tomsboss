@@ -49,7 +49,7 @@
   .time-col{display:flex;flex-direction:column;gap:4px}
   .btn.small.square{width:38px;padding:6px 0;font-size:12px;text-align:center}
 
-  /* 地圖顏色標示（行的左側色條；底色在 inline style 補） */
+  /* 地圖顏色標示（左側色條；整列底色在 inline style 設定） */
   tr.rowMap { border-left:6px solid transparent; }
   .mapBadge { display:inline-flex; align-items:center; gap:8px; justify-content:center }
   .mapDot { width:10px; height:10px; border-radius:50%; display:inline-block }
@@ -259,17 +259,26 @@ function toast(msg="已複製到剪貼簿！"){
   setTimeout(()=>t.classList.remove('show'),1000);
 }
 
-/* 地圖色彩（新增 soft 半透明底色） */
+/* 地圖色彩：固定 12 色分段 + 亮度交錯（更容易區分） */
 function strHash(s){
   let h=0;
   for(let i=0;i<s.length;i++){ h=((h<<5)-h + s.charCodeAt(i))|0; }
   return Math.abs(h);
 }
 function mapColor(mapName){
-  const h = strHash(mapName) % 360;
-  const s = 65, l = 45;
-  const strong = `hsl(${h}deg, ${s}%, ${l}%)`;
-  const soft   = `hsla(${h}, ${s}%, ${l}%, 0.18)`; // ← 透明度可依喜好調整
+  const PALETTE = [12,42,72,102,132,162,192,222,252,282,312,342]; // 12 色盤
+  const idx = Math.abs(strHash(mapName)) % PALETTE.length;
+  const h = PALETTE[idx];
+
+  const alt = (Math.abs(strHash(mapName) >> 4) % 2) === 0; // 交錯亮度
+  const sStrong = 72;
+  const lStrong = alt ? 42 : 35;
+  const sSoft   = 70;
+  const lSoft   = alt ? 30 : 26;
+  const ALPHA   = 0.22; // 底色透明度（可調 0.18~0.30）
+
+  const strong = `hsl(${h}deg, ${sStrong}%, ${lStrong}%)`;      // 左側色條與小圓點
+  const soft   = `hsla(${h}, ${sSoft}%, ${lSoft}%, ${ALPHA})`;  // 整列底色（不改文字色）
   return { bg: strong, soft };
 }
 
@@ -350,7 +359,7 @@ function render(){
     else if ((target - now) <= 10*60*1000) cls = "timeSoon";
 
     const { bg, soft } = mapColor(row.map);
-    const rowStyle = `border-left-color:${bg}; background:${soft}`; // ← 加底色（不改文字顏色）
+    const rowStyle = `border-left-color:${bg}; background:${soft}`;
 
     return `<tr class="rowMap" data-key="${keyOf(row.ep,row.map,row.channel)}" style="${rowStyle}">
       <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
@@ -467,6 +476,7 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
   let at = parseInt(shiftAt.value,10);
   if (!ep || !map || !at || at<1){ shiftMsg.textContent = '請輸入正確的分流號（>=1）'; return; }
 
+  // 找出符合 EP+Map 且 channel >= at 的項目
   const affected = Object.entries(state.entries)
     .filter(([,v]) => v.ep===ep && v.map===map && parseInt(v.channel,10) >= at)
     .map(([k,v]) => ({key:k, data:v, ch:parseInt(v.channel,10)}));
@@ -476,6 +486,7 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
     return;
   }
 
+  // 由大到小搬移避免覆蓋
   affected.sort((a,b)=>b.ch - a.ch).forEach(item=>{
     const oldKey = item.key;
     const v = item.data;
@@ -577,7 +588,7 @@ async function gate(){
     if (!correct){
       loadPassword();
       return;
-       }
+    }
     const val = (input.value || "").trim();
     if (!val){
       msg.textContent = "請先輸入密碼";
