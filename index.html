@@ -49,7 +49,7 @@
   .time-col{display:flex;flex-direction:column;gap:4px}
   .btn.small.square{width:38px;padding:6px 0;font-size:12px;text-align:center}
 
-  /* 地圖顏色標示 */
+  /* 地圖顏色標示（行的左側色條；底色在 inline style 補） */
   tr.rowMap { border-left:6px solid transparent; }
   .mapBadge { display:inline-flex; align-items:center; gap:8px; justify-content:center }
   .mapDot { width:10px; height:10px; border-radius:50%; display:inline-block }
@@ -166,7 +166,6 @@
         <button class="btn" id="copyAllBtn">複製全部</button>
         <button class="btn" id="delCheckedBtn">清除勾選</button>
         <button class="btn" id="delAllBtn">清除全部</button>
-        <!-- 新增：分流後移按鈕 -->
         <button class="btn" id="shiftBtn">分流後移</button>
       </div>
       <div class="sound">
@@ -260,7 +259,7 @@ function toast(msg="已複製到剪貼簿！"){
   setTimeout(()=>t.classList.remove('show'),1000);
 }
 
-/* 地圖色彩 */
+/* 地圖色彩（新增 soft 半透明底色） */
 function strHash(s){
   let h=0;
   for(let i=0;i<s.length;i++){ h=((h<<5)-h + s.charCodeAt(i))|0; }
@@ -269,9 +268,9 @@ function strHash(s){
 function mapColor(mapName){
   const h = strHash(mapName) % 360;
   const s = 65, l = 45;
-  const bg = `hsl(${h}deg, ${s}%, ${l}%)`;
-  const fg = l >= 50 ? '#111' : '#fff';
-  return { bg, fg };
+  const strong = `hsl(${h}deg, ${s}%, ${l}%)`;
+  const soft   = `hsla(${h}, ${s}%, ${l}%, 0.18)`; // ← 透明度可依喜好調整
+  return { bg: strong, soft };
 }
 
 /** ===== 本地存取 ===== */
@@ -340,7 +339,7 @@ function refreshShiftMaps(){
   shiftMap.innerHTML = maps.map(m=>`<option value="${m}">${m}</option>`).join("");
 }
 
-/** ===== 表格渲染（含地圖顏色） ===== */
+/** ===== 表格渲染（整列底色 + 左側色條 + 圓點） ===== */
 function render(){
   const rows = Object.values(state.entries).sort((a,b)=>new Date(a.targetISO)-new Date(b.targetISO));
   tbody.innerHTML = rows.map(row=>{
@@ -350,8 +349,8 @@ function render(){
     if (now >= target) cls = "timeDue";
     else if ((target - now) <= 10*60*1000) cls = "timeSoon";
 
-    const { bg } = mapColor(row.map);
-    const rowStyle = `border-left-color:${bg}`;
+    const { bg, soft } = mapColor(row.map);
+    const rowStyle = `border-left-color:${bg}; background:${soft}`; // ← 加底色（不改文字顏色）
 
     return `<tr class="rowMap" data-key="${keyOf(row.ep,row.map,row.channel)}" style="${rowStyle}">
       <td><input type="checkbox" class="chk" ${row.checked?'checked':''}></td>
@@ -449,7 +448,6 @@ tbody.addEventListener('change', (e)=>{
 
 /** ===== 分流後移：對話框與邏輯 ===== */
 function openShiftDialog(){
-  // 將目前新增區的 EP/Map 帶入，方便操作
   shiftEp.value = epSel.value;
   refreshShiftMaps();
   shiftMap.value = mapSel.value;
@@ -469,7 +467,6 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
   let at = parseInt(shiftAt.value,10);
   if (!ep || !map || !at || at<1){ shiftMsg.textContent = '請輸入正確的分流號（>=1）'; return; }
 
-  // 找出符合 EP+Map 且 channel >= at 的項目
   const affected = Object.entries(state.entries)
     .filter(([,v]) => v.ep===ep && v.map===map && parseInt(v.channel,10) >= at)
     .map(([k,v]) => ({key:k, data:v, ch:parseInt(v.channel,10)}));
@@ -479,21 +476,16 @@ document.getElementById('shiftOk').addEventListener('click', ()=>{
     return;
   }
 
-  // 為避免覆蓋：照分流號由大到小搬移
   affected.sort((a,b)=>b.ch - a.ch).forEach(item=>{
     const oldKey = item.key;
     const v = item.data;
     const newChannel = String(item.ch + 1);
     const newKey = keyOf(v.ep, v.map, newChannel);
 
-    // 若 newKey 已存在，先備份舊資料（幾乎不會撞，因為我們是由大到小依序搬）
     if (state.entries[newKey]){
-      // 理論上不會被覆蓋到，但保險起見：
       console.warn('[shift] 目標分流已存在，將覆蓋：', newKey);
     }
-    // 寫入新 key
     state.entries[newKey] = { ...v, channel: newChannel };
-    // 刪除舊 key
     delete state.entries[oldKey];
   });
 
@@ -585,7 +577,7 @@ async function gate(){
     if (!correct){
       loadPassword();
       return;
-    }
+       }
     const val = (input.value || "").trim();
     if (!val){
       msg.textContent = "請先輸入密碼";
